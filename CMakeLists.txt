@@ -38,10 +38,13 @@ add_executable(tinyvisionIpcV1
 	yuvToH264Encoder.cpp
 	yuvReader.h
 	yuvReader.cpp
-	H264Encoder.h
+	h264Encoder.h
 	H264Encoder.cpp
 	rtspServer.h
 	rtspServer.cpp
+	ion_alloc.h
+	ion_alloc_list.h
+	ion_alloc.c
 )
 
 target_link_libraries(tinyvisionIpcV1 AWIspApi)
