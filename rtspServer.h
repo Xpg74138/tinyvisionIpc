@@ -25,9 +25,9 @@ public:
 
     };
     int rtspPort;
-    char *rtspUrl = nullptr;
-    char *rtspUsername = nullptr;
-    char *rtspPassword = nullptr;
+    const char *rtspUrl = nullptr;
+    const char *rtspUsername = nullptr;
+    const char *rtspPassword = nullptr;
     size_t cnt = 0;
     int (*getIDR)() = nullptr;
     void *encObj = nullptr;
@@ -39,7 +39,7 @@ public:
     RtspServer();
     ~RtspServer();
 
-    int Init(int nPort, char *pLiveName, char *pUsername, char *pPassword);
+    int Init(int nPort, const char *pLiveName, const char *pUsername, const char *pPassword);
     void Uninit();
 
     int PktQueueSize();

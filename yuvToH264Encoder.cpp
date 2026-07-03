@@ -5,6 +5,8 @@
 #endif
 #define LOG_TAG "YuvToH264Encoder"
 
+#include <stdlib.h>
+#include <string.h>
 
 YuvToH264Encoder::YuvToH264Encoder()
 {
@@ -46,6 +48,42 @@ int YuvToH264Encoder::H264Dequeue(H264Data **h264Data)
 	return 0;
 }
 
+void YuvToH264Encoder::SetH264DataSink(H264DataSink sink, void *obj)
+{
+	h264DataSink = sink;
+	h264DataSinkObj = obj;
+}
+
+void YuvToH264Encoder::EmitH264Data(H264Data *h264Data)
+{
+	if(h264DataSink)
+	{
+		h264DataSink(h264Data, h264DataSinkObj);
+		return;
+	}
+
+	h264Queue.enqueue(h264Data);
+}
+
+void YuvToH264Encoder::EmitSpsPpsBeforeKeyFrame(uint8_t *spsPps, size_t spsPpsLen, int64_t pts)
+{
+	H264Data *spsPpsData = new H264Data();
+
+	spsPpsData->len = spsPpsLen;
+	spsPpsData->buf = (uint8_t *)malloc(spsPpsLen);
+	if(spsPpsData->buf)
+	{
+		memcpy(spsPpsData->buf, spsPps, spsPpsLen);
+		spsPpsData->pts = pts;
+		EmitH264Data(spsPpsData);
+	}
+	else
+	{
+		LOGW("malloc keyframe sps pps err");
+		delete spsPpsData;
+	}
+}
+
 void YuvToH264Encoder::run()
 {
 	int i;
@@ -53,9 +91,9 @@ void YuvToH264Encoder::run()
 	uint8_t *y;
 	uint8_t *c;
 	uint8_t *data;
-	uint8_t *spsPps;
+	uint8_t *spsPps = nullptr;
 	size_t len;
-	size_t spsPpsLen;
+	size_t spsPpsLen = 0;
 	int keyFrameFlag;
 	int64_t pts;
 	int staFlag = 0;
@@ -77,8 +115,17 @@ void YuvToH264Encoder::run()
 	
 		h264Data->len = spsPpsLen;
 		h264Data->buf = (uint8_t *)malloc(spsPpsLen);
-		memcpy(h264Data->buf, spsPps, spsPpsLen);
-		h264Queue.enqueue(h264Data);
+		if(h264Data->buf)
+		{
+			memcpy(h264Data->buf, spsPps, spsPpsLen);
+			EmitH264Data(h264Data);
+		}
+		else
+		{
+			LOGW("malloc sps pps err");
+			delete h264Data;
+			h264Data = nullptr;
+		}
 	}
 	
 	LOGI("loop start");
@@ -128,24 +175,16 @@ void YuvToH264Encoder::run()
 			
 			h264Data = new H264Data();
 			
-			//if(keyFrameFlag == 0)
+			if((keyFrameFlag != 0) && (spsPps != nullptr) && (spsPpsLen > 0))
 			{
-				h264Data->buf = data;
-				h264Data->len = len;
+				EmitSpsPpsBeforeKeyFrame(spsPps, spsPpsLen, pts);
 			}
-			/*else 
-			{// keyframe spspps
-				h264Data->buf = (uint8_t *)malloc(spsPpsLen + len);
-				h264Data->len = spsPpsLen + len;
-				memcpy(h264Data->buf, spsPps, spsPpsLen);
-				memcpy(h264Data->buf + spsPpsLen, data, len);
-				free(data);
-				data = nullptr;
-			}*/
+			h264Data->buf = data;
+			h264Data->len = len;
 			h264Data->flag = keyFrameFlag;
 			h264Data->pts = pts;
 			
-			h264Queue.enqueue(h264Data);
+			EmitH264Data(h264Data);
 			//LOGI("sta1");
 			/*if(h264Data)
 			{

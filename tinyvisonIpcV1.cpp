@@ -5,6 +5,16 @@
 #endif
 #define LOG_TAG "TinyvisonIpcV1"
 
+static void RtspH264DataSink(H264Data *h264Data, void *obj)
+{
+	if(obj == nullptr)
+	{
+		return;
+	}
+
+	RtspServer *rtspServer = (RtspServer *)obj;
+	rtspServer->PktQueueEnqueue(h264Data);
+}
 
 TinyvisonIpcV1::TinyvisonIpcV1()
 {
@@ -16,13 +26,24 @@ TinyvisonIpcV1::~TinyvisonIpcV1()
 	
 }
 
-int TinyvisonIpcV1::Init(int w, int h, int fps)
+int TinyvisonIpcV1::Init(int w, int h, int fps, int rtspPort, const char *rtspPath)
 {
-	int i;
 	int ret;
 	
-	yuvToH264Encoder.Init(w, h, fps);
-	rtspServer.Init(554, "/live", "", "");
+	ret = yuvToH264Encoder.Init(w, h, fps);
+	if (ret < 0) {
+		LOGE("yuvToH264Encoder init failed: %d", ret);
+		return ret;
+	}
+
+	ret = rtspServer.Init(rtspPort, rtspPath, "", "");
+	if (ret < 0) {
+		LOGE("rtspServer init failed: %d", ret);
+		yuvToH264Encoder.Uninit();
+		return ret;
+	}
+
+	yuvToH264Encoder.SetH264DataSink(RtspH264DataSink, &rtspServer);
 	return 0;
 }
 
@@ -34,32 +55,13 @@ void TinyvisonIpcV1::Uninit()
 
 void TinyvisonIpcV1::run()
 {
-	int i;
-	int ret;
-	H264Data *h264Data;
-	
-	yuvToH264Encoder.Start();
 	rtspServer.Start();
+	yuvToH264Encoder.Start();
 	
 	LOGI("loop start");
 	while(stopFlag == 0)
 	{
 		IThreadMSleep(10);
-		
-		ret = yuvToH264Encoder.H264Dequeue(&h264Data);
-		if(ret < 0)
-		{
-			continue;
-		}
-		
-		rtspServer.PktQueueEnqueue(h264Data);
-		/*if(h264Data->buf)
-		{
-			free(h264Data->buf);
-			h264Data->buf = nullptr;
-		}
-		delete h264Data;
-		h264Data = nullptr;*/
 	}
 	yuvToH264Encoder.Stop();
 	rtspServer.Stop();

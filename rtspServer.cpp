@@ -5,6 +5,22 @@
 #endif
 #define LOG_TAG "RtspServer"
 
+static const int RTSP_H264_QUEUE_MAX = 3;
+
+static void ReleaseH264Data(H264Data *h264Data)
+{
+    if (h264Data == nullptr) {
+        return;
+    }
+
+    if (h264Data->buf) {
+        free(h264Data->buf);
+        h264Data->buf = nullptr;
+    }
+
+    delete h264Data;
+}
+
 RtspServer::RtspServer()
 {
 
@@ -15,7 +31,7 @@ RtspServer::~RtspServer()
 
 }
 
-int RtspServer::Init(int nPort, char *pLiveName, char *pUsername, char *pPassword)
+int RtspServer::Init(int nPort, const char *pLiveName, const char *pUsername, const char *pPassword)
 {
     LOGI("start");
     if (initFlag == 1) {
@@ -28,9 +44,11 @@ int RtspServer::Init(int nPort, char *pLiveName, char *pUsername, char *pPasswor
         return  -2;
     }
 
-    szSessionHandle = create_rtsp_session(szHandle, pLiveName, pUsername, pPassword);
+    szSessionHandle = create_rtsp_session(szHandle, pLiveName, (char *)pUsername, (char *)pPassword);
     if (szSessionHandle == NULL) {
         LOGI("create_rtsp_session fail");
+        rtsp_del_demo(szHandle);
+        szHandle = NULL;
         return  -3;
     }
 
@@ -75,9 +93,29 @@ int RtspServer::PktQueueSize()
 
 void RtspServer::PktQueueEnqueue(H264Data *h264Data)
 {
-    if ((initFlag == 0) || ((stopFlag == 1))) {
+    if (h264Data == nullptr) {
         return;
     }
+
+    if ((initFlag == 0) || ((stopFlag == 1))) {
+        ReleaseH264Data(h264Data);
+        return;
+    }
+
+    int dropCnt = 0;
+    while (h264Queue.size() >= RTSP_H264_QUEUE_MAX) {
+        H264Data *dropData = nullptr;
+        if (h264Queue.dequeue(&dropData) < 0) {
+            break;
+        }
+        ReleaseH264Data(dropData);
+        dropCnt++;
+    }
+
+    if (dropCnt > 0) {
+        LOGW("drop old h264 packets %d, queue limit %d", dropCnt, RTSP_H264_QUEUE_MAX);
+    }
+
     h264Queue.enqueue(h264Data);
 }
 
@@ -94,14 +132,11 @@ void RtspServer::run()
         if (PktQueueSize() > 0) {
             h264Queue.dequeue(&h264Data);
 
-
             if(h264Data->buf) {
 				SendPkt(h264Data->buf, h264Data->len, h264Data->pts);
-				free(h264Data->buf);
-				h264Data->buf = nullptr;
 			}
 			
-			delete h264Data;
+			ReleaseH264Data(h264Data);
 			h264Data = nullptr;
 			
         }
@@ -109,12 +144,7 @@ void RtspServer::run()
     }
     while(h264Queue.size() > 0) {
         h264Queue.dequeue(&h264Data);
-		if(h264Data->buf) {
-			free(h264Data->buf);
-			h264Data->buf = nullptr;
-		}
-		
-		delete h264Data;
+		ReleaseH264Data(h264Data);
 		h264Data = nullptr;
     }
 
@@ -123,16 +153,7 @@ void RtspServer::run()
 
 int RtspServer::SendPkt(uint8_t *pData, int nLen, uint64_t nPts)
 {
-    uint8_t *rtspBuf = nullptr;
-    int rtspLen;
-    char nalHlsHead[6] = {0, 0, 0, 1, 9, 0x30};
-
-    rtspLen = nLen + 6;
-    rtspBuf = (uint8_t *)malloc(rtspLen);
-    memcpy(rtspBuf, nalHlsHead, 6);
-    memcpy((void *)(rtspBuf + 6), pData, nLen);
-    SendData(rtspBuf, rtspLen, nPts, 1);
-    free(rtspBuf);  
+    SendData(pData, nLen, nPts, 1);
 	//LOGI("send");
 
     return 0;

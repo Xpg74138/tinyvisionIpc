@@ -12,7 +12,7 @@ public:
 	TinyvisonIpcV1();
 	~TinyvisonIpcV1();
 	
-	int Init(int w, int h, int fps);
+	int Init(int w, int h, int fps, int rtspPort, const char *rtspPath);
 	void Uninit();
 	
 	virtual void run();

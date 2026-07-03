@@ -5,6 +5,11 @@
 #endif
 #define LOG_TAG "H264Encoder"
 
+static const int LOW_LATENCY_GOP_DIVISOR = 2;
+static const int LOW_LATENCY_VBV_MS = 500;
+static const unsigned int LOW_LATENCY_VBV_MIN = 256 * 1024;
+static const unsigned int LOW_LATENCY_VBV_MAX = 2 * 1024 * 1024;
+
 BitMapInfoS bit_map_info[13];
 
 static int setEncParam(encoder_Context* pEncContext, encode_param_t *encode_param);
@@ -32,6 +37,32 @@ void init_mb_info(VencMBInfo *MBInfo, encode_param_t *encode_param);
 void setMbMode(encoder_Context* pEncContext, encode_param_t *encode_param);
 void getMbMinfo(encoder_Context* pEncContext);
 void releaseMb(encode_param_t *encode_param);
+
+static int lowLatencyGopFrames(int fps)
+{
+	int gop = fps / LOW_LATENCY_GOP_DIVISOR;
+	if(gop < 1)
+	{
+		gop = 1;
+	}
+	return gop;
+}
+
+static unsigned int lowLatencyVbvSize(int bitRate)
+{
+	unsigned int vbvSize = (unsigned int)(((int64_t)bitRate * LOW_LATENCY_VBV_MS) / 8000);
+
+	if(vbvSize < LOW_LATENCY_VBV_MIN)
+	{
+		vbvSize = LOW_LATENCY_VBV_MIN;
+	}
+	else if(vbvSize > LOW_LATENCY_VBV_MAX)
+	{
+		vbvSize = LOW_LATENCY_VBV_MAX;
+	}
+
+	return vbvSize;
+}
 
 H264Encoder::H264Encoder()
 {
@@ -121,8 +152,8 @@ int H264Encoder::Init(int width, int height, int fps)
     
     encode_param.bit_rate = 8*1024*1024;
 	
-    encode_param.maxKeyFrame = fps;
-    encode_param.frame_rate = encode_param.maxKeyFrame;
+    encode_param.frame_rate = fps;
+    encode_param.maxKeyFrame = lowLatencyGopFrames(fps);
 	encode_param.pixel_format = VENC_PIXEL_YVU420SP;//VENC_PIXEL_YUV420SP NV12 VENC_PIXEL_YVU420SP NV21
     encode_param.encode_format = VENC_CODEC_H264;
     //encode_param.encode_frame_num = 100;
@@ -142,6 +173,10 @@ int H264Encoder::Init(int width, int height, int fps)
         encode_param.bit_rate = 1*1024*1024 * mult;
     else
         encode_param.bit_rate = 4*1024*1024 * mult;
+    encode_param.vbv_size = lowLatencyVbvSize(encode_param.bit_rate);
+    LOGI("low latency encode fps %d gop %d bitrate %d vbv %u",
+         encode_param.frame_rate, encode_param.maxKeyFrame,
+         encode_param.bit_rate, encode_param.vbv_size);
 		
 	/******** begin set baseConfig param********/
     memset(&baseConfig, 0 ,sizeof(VencBaseConfig));
@@ -297,8 +332,6 @@ int H264Encoder::Init(int width, int height, int fps)
         LOGI("setEncParam error, return");
         return -3;
     }
-	encode_param.h264_func.h264Param.sGopParam.eGopMode = (VENC_VIDEO_GOP_MODE)1;
-	
     baseConfig.bOnlineMode    = pEncContext->bOnlineMode;
     baseConfig.bOnlineChannel = pEncContext->bOnlineChannel;
     VencInit(pVideoEnc, &baseConfig);
@@ -1058,10 +1091,12 @@ static int initH264Func(encode_param_t *encode_param)
     h264_func->h264Param.bEntropyCodingCABAC = 1;
     h264_func->h264Param.nBitrate = encode_param->bit_rate;
     h264_func->h264Param.nFramerate = encode_param->frame_rate;
+    h264_func->h264Param.nMaxKeyInterval = encode_param->maxKeyFrame;
     h264_func->h264Param.nCodingMode = VENC_FRAME_CODING;
     h264_func->h264Param.sProfileLevel.nProfile = VENC_H264ProfileHigh;
     h264_func->h264Param.sProfileLevel.nLevel = VENC_H264Level51;
-     if(h264_func->h264Param.nMaxKeyInterval == 0)
+    h264_func->h264Param.sGopParam.eGopMode = (VENC_VIDEO_GOP_MODE)1;
+    if(h264_func->h264Param.nMaxKeyInterval == 0)
     {
         h264_func->h264Param.nMaxKeyInterval = h264_func->h264Param.nFramerate;
     }
