@@ -1,0 +1,38 @@
+# Build directories
+build/
+cmake-build-*/
+CMakeFiles/
+**/CMakeFiles/
+
+# CMake generated files
+CMakeCache.txt
+cmake_install.cmake
+**/cmake_install.cmake
+Makefile
+**/Makefile
+!CMakeLists.txt
+
+# Native build outputs
+*.o
+*.obj
+*.a
+*.so
+*.dll
+*.lib
+*.exe
+tinyvisionIpcV1
+
+# Logs and temporary files
+*.log
+*.tmp
+*.bak
+*.swp
+
+# IDE files
+.vscode/
+.idea/
+*.vcxproj.user
+
+# OS files
+Thumbs.db
+.DS_Store
